@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 #Date time
 from datetime import datetime
+import unicodedata
 
 #Open the formatted JSON file to be used for comparison
 def open_json(file):
@@ -129,13 +130,13 @@ for i in range(size1):
     if index == -1:
         count += 1
         
-#pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
+pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
 
 #Number of rules in the guideline that is in the WAF
 count1 = size1 - count
 #Number of rules in the WAF that is not part of CRS
 count = size2 - count1
-#pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
+pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
 
 #Compare the version of each rule found in the Guideline with those found in the WAF
 version = "4.0.0"
@@ -237,24 +238,24 @@ for i in range(size1):
         waf_value = 0
         guideline_key = 0
         guideline_value = 0
-        for key, value in waf[index].items():
-            if value:
-                if "TX" not in key:
-                    waf_key = key
-                    waf_value = value
-                    break
-        for key, value in guideline[i].items():
-            if value:
-                if "TX" not in key:
-                    guideline_key = key
-                    guideline_value = value
-                    break
+        for key,value in waf[index].items():
+            if "Sec" in key and "TX" not in key:
+                waf_key = key
+                waf_value = value
+                break
+        for key,value in guideline[i].items():
+            if "Sec" in key and "TX" not in key:
+                guideline_key = key
+                guideline_value = value
+                break
         if guideline_key != waf_key or guideline_value != waf_value:
             is_request_header_same = False
             header = guideline_key + guideline_value
             header1 = waf_key + waf_value
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
+            print(header)
             request_headers.append(request_header)
+        
 
 #---------------------------------Prepping PDF-------------------------------
 def section_header(section_name):
@@ -335,12 +336,14 @@ if is_request_header_same is False:
         pdf.cell(col_width, row_height, 'Configured Header', border=1, align='')
         pdf.ln()
         pdf.set_font('Arial', '', 12)
-        pdf.multi_cell(col_width, row_height, str(request_headers[i][1]), border=1, align='')
+        text_latin1 = unicodedata.normalize('NFKD', str(request_headers[i][1])).encode('latin-1', 'ignore').decode('latin-1')
+        pdf.multi_cell(col_width, row_height, text_latin1, border=1, align='')
         pdf.set_font('Arial', 'B', 12)
         pdf.cell(col_width, row_height, 'Recommended Header', border=1, align='')
         pdf.ln()
         pdf.set_font('Arial', '', 12)
-        pdf.multi_cell(col_width, row_height, str(request_headers[i][2]), border=1, align='')
+        text_latin2 = unicodedata.normalize('NFKD', str(request_headers[i][2])).encode('latin-1', 'ignore').decode('latin-1')
+        pdf.multi_cell(col_width, row_height, text_latin2, border=1, align='')
         pdf.ln()
         pdf.set_font('Arial', 'B', 12)
 else:
