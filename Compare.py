@@ -1,7 +1,7 @@
 import json
-from git import Repo
-from git import RemoteProgress
-from git import rmtree
+#from git import Repo
+#from git import RemoteProgress
+#from git import rmtree
 from tqdm import tqdm
 import os
 import subprocess
@@ -76,30 +76,101 @@ def pie_chart(x, y, xlabel, ylabel, title1):
     #plt.savefig('pie_chart.png')
     
 #Calculate Score --> x = WAF / Guideline
-def calculate_score(x):
-    total_score = 0
-    for rule in x:
-        anomaly_score, severity = extract_score(rule)
-        # Skip over rules without anomaly score and severity
-        if anomaly_score is None and severity is None:
-            continue
+#def calculate_score(x):
+#    total_score = 0
+#    for rule in x:
+#        anomaly_score, severity = extract_score(rule)
+#        # Skip over rules without anomaly score and severity
+#        if anomaly_score is None and severity is None:
+#            continue
         # Assign score according to anomaly score and severity
-        score = 0
-        if anomaly_score is not None:
-            score += anomaly_score
-        if severity == "CRITICAL":
-            score += 5
-        elif severity == "ERROR":
-            score += 4
-        elif severity == "WARNING":
-            score += 3
-        elif severity == "NOTICE":
-            score += 2
-        total_score += score
+#        score = 0
+#        if anomaly_score is not None:
+#            score += anomaly_score
+#        if severity == "CRITICAL":
+#            score += 5
+#        elif severity == "ERROR":
+#            score += 4
+#        elif severity == "WARNING":
+#            score += 3
+#        elif severity == "NOTICE":
+#            score += 2
+#        total_score += score
         # Add the score to the rule dictionary
-        rule["score"] = score
+ #       rule["score"] = score
     #print(json.dumps(guideline, indent=4))
-    return total_score
+#    return total_score
+def calculate_weighted_scores(file_path):
+    # Open the formatted JSON file to be used for comparison
+    def open_json(file):
+        with open(file, "r") as file:
+            file_data = json.load(file)
+            return file_data
+
+    def extract_score(rule):
+        anomaly_score = None
+        paranoia_level = None
+        severity = None
+        setvar = None
+        tag = None
+        if "severity" in rule:
+            severity = rule["severity"]
+        if "setvar" in rule:
+            setvar = rule["setvar"]
+            if "anomaly_score_" in setvar:
+                pl_match = re.search("pl\d+", setvar)
+                if pl_match:
+                    anomaly_score = int(pl_match.group(0)[2:])
+            elif "paranoia_level=" in setvar:
+                pl_match = re.search("\d+", setvar)
+                if pl_match:
+                    paranoia_level = int(pl_match.group(0))
+            elif "tag" in rule:
+                tag = rule["tag"]
+                if "paranoia-level/" in tag:
+                    pl_match = re.search("\d+", tag)
+                    if pl_match:
+                        paranoia_level = int(pl_match.group(0))
+
+        return anomaly_score, paranoia_level, severity
+
+    guideline = open_json(file_path)
+    print("Number of rules:", len(guideline))
+    total_weighted_score = 0
+    w1 = 0.2 # weight for anomaly score
+    w2 = 0.2 # weight for paranoia level
+    w3 = 0.5 # weight for severity
+
+    for rule in guideline:
+        anomaly_score, paranoia_level, severity = extract_score(rule)
+        # Skip over rules without anomaly score, paranoia level, and severity
+        if anomaly_score is None and paranoia_level is None and severity is None:
+            continue
+        # Calculate weighted score according to anomaly score, paranoia level, and severity
+        weighted_score = 0
+        if anomaly_score is not None:
+            weighted_score += (anomaly_score * w1)
+        if paranoia_level is not None:
+            weighted_score += (paranoia_level * w2)
+        if severity == "CRITICAL":
+            weighted_score += (5 * w3)
+        elif severity == "ERROR":
+            weighted_score += (4 * w3)
+        elif severity == "WARNING":
+            weighted_score += (3 * w3)
+        elif severity == "NOTICE":
+            weighted_score += (2 * w3)
+
+        # Add the weighted score to the rule dictionary
+        rule["weighted_score"] = weighted_score
+
+        total_weighted_score += weighted_score
+
+    # Calculate average weighted score per rule
+    #print("Total weighted score:", round(total_weighted_score, 2))
+
+    #return guideline
+    return round(total_weighted_score, 2)
 
 def create_arrray(w, x, y, z=None):
     array = []
@@ -111,7 +182,6 @@ def create_arrray(w, x, y, z=None):
     if z is not None:
         array.append(z)
     return array
-
 
 
 guideline = open_json("Guideline.json")
@@ -130,13 +200,13 @@ for i in range(size1):
     if index == -1:
         count += 1
         
-pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
+#pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
 
 #Number of rules in the guideline that is in the WAF
 count1 = size1 - count
 #Number of rules in the WAF that is not part of CRS
 count = size2 - count1
-pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
+#pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
 
 #Compare the version of each rule found in the Guideline with those found in the WAF
 version = "4.0.0"
@@ -186,8 +256,12 @@ plt.xticks(np.arange(len(labels)), labels)
 # Adjust the spacing of the labels
 plt.gcf().autofmt_xdate(rotation=45)
 plt.savefig("Bargraph1.png")
-total_score = calculate_score(guideline)
-waf_score = calculate_score(waf)
+#total_score = calculate_score(guideline)
+#waf_score = calculate_score(waf)
+total_score = calculate_weighted_scores("Guideline.json")
+waf_score = calculate_weighted_scores("waf.json")
+#print(total_score)
+#print(waf_score)
 
 severitys = []
 is_severity_same = None
@@ -253,7 +327,7 @@ for i in range(size1):
             header = guideline_key + guideline_value
             header1 = waf_key + waf_value
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
-            print(header)
+            #print(header)
             request_headers.append(request_header)
         
 
@@ -261,6 +335,10 @@ for i in range(size1):
 def section_header(section_name):
     pdf.set_font('Arial', 'B', 15)
     pdf.cell(0, 20, section_name, 'B', 1, '')
+
+def section_header_1(section_text):
+    pdf.set_font('Arial', 'B', 12)
+    pdf.multi_cell(0, 7, section_text, 0, 1, '')
 
 def section_text(section_text):
     pdf.set_font('Arial', '', 12)
@@ -284,28 +362,36 @@ def table_3_by_3(col1, col2, col3, data_array):
         pdf.cell(col_width, row_height, str(data_array[i][2]), border=1, align='C')
         pdf.ln()
 
+def table_2_by_2(data_array):
+    pdf.set_font('Arial', 'B', 12)
+    col_width = pdf.w / 1.1
+    row_height = pdf.font_size * 2
+    for i in range(len(data_array)):
+        pdf.cell(col_width, row_height, data_array[i][0], border=1, align='')
+        pdf.ln()
+        pdf.set_font('Arial', '', 12)
+        pdf.multi_cell(col_width, row_height, str(data_array[i][1]), border=1, align='')
+        pdf.set_font('Arial', 'B', 12)
+
 pdf = FPDF()
-#By default, there is no page. Add page using add_page
 pdf.add_page()
-#Before printing text, it is mandatory to select font using set_font
 pdf.set_font('Arial', 'B', 30)
-#Height, Width, Description,
 pdf.cell(0, 20, 'Gods Web', 0, 1, 'C')
 
 pdf.set_font('Arial', '', 10)
 description = 'Generated on: ' + str(datetime.now())
 pdf.multi_cell(0, 7, description, 0, 1, '')
+section_header("Overview")
 section_text("This report presents the results of God's Web, which is designed to evaluate the configuration of an OWASP Web Application Firewall (WAF) against the OWASP Core Rule Set (CRS) best practices. The tool assesses whether each CRS rule is present in the WAF configuration and ensures that the security levels of each rule cannot be lower than the CRS guidelines. The results of the audit tool are presented in the following sections, providing key findings and recommendations for improving the WAF configuration to align with CRS best practices.")
 
-section_header("Overview")
-section_text("The security level score of the current WAF rules are compared to CRS guideline, the closer the score is to the guideline, the more closely the security level aligns with best practices.")
-section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
-pdf.ln()
+#section_header("Scoring")
+#section_text("The security level score of the current WAF rules are compared to CRS guideline, the closer the score is to the guideline, the more closely the security level aligns with best practices.")
+#section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
+#pdf.ln()
 
 section_header("Compliance")
 section_text("The following pie chart shows the distribution of WAF rules that are included in the guideline but are not present in the WAF, expressed as a percentage of the total number of WAF rules.")
-pdf.image('pie_chart.png', 30, 165, w = 140, h = 120, type = '', link = '')
-#pdf.set_y(260) # move cursor position to below the image
+pdf.image('pie_chart.png', 30, 185, w = 140, h = 120, type = '', link = '')
 
 pdf.add_page()
 section_header("WAF Breakdown")
@@ -316,11 +402,14 @@ section_text("The following bar graph shows the distribution of WAF rules enable
 pdf.image('Bargraph1.png', 30, 175, w = 140, h = 120, type = '', link = '')
 
 pdf.add_page()
-
-section_header("Rule Header")
+section_header("Rule Variables")
 if is_request_header_same is False:
-    section_text("The following rules have different request_header")
+    if is_latest_version is False:
+        section_header_1("[WHAT IS IT]")
+        section_text("Variables in ModSecurity rule are used to define conditions that trigger specific actions, such as blocking or logging a request")
     pdf.ln()
+    section_header_1("[WHY IS IT IMPORTANT]")
+    section_text("If ModSecurity variables are set incorrectly, it can lead to unexpected behavior or errors in the rules processing. This can result in the rules not functioning as intended, or potentially blocking legitimate traffic.\n\nThe following rules have different variables configured: ")
     pdf.set_font('Arial', 'B', 12)
     col_width = pdf.w / 1.1
     row_height = pdf.font_size * 2
@@ -357,22 +446,42 @@ if is_latest_version is False:
 else:
     section_text('As of ' + str(datetime.now()) + ', the latest version of ModSecurity Core Rule Set (CRS) is: ' + version + '. All rules are currently using the latest version.')
     
+pdf.add_page()
 section_header("Severity")
-pdf.set_font('Arial', '', 12)
+section_header_1("[WHAT IS IT]")
 if is_severity_same is False:
-    section_text("The severity level of a rule in ModSecurity CRS affects the score that is assigned to a particular event or anomaly detected by that rule. Each severity level has a different weight or impact on the overall score that is calculated for a particular request. \nThe severity levels are as follows: \nCRITICAL (level 5): Indicates that the anomaly detected by the rule is very severe and requires immediate attention. A request that triggers such a rule would be assigned a high score, which would indicate that it is likely an attack. \nERROR (level 4): Indicates that the anomaly is serious and could result in a security breach if not addressed. A request that triggers such a rule would be assigned a high score, which would indicate that it is potentially malicious. \nWARNING (level 3): Indicates that the anomaly is of moderate severity and could potentially lead to a security issue. A request that triggers such a rule would be assigned a lower score than a critical or error-level rule. \nNOTICE (level 2): Indicates that the anomaly is of low severity and may not necessarily indicate an attack or security issue. A request that triggers such a rule would be assigned a low score. \nIt is important to configure the WAF rules based on the severity of the application's security needs. If the configured WAF rules have a lower severity than the OWASP CRS Guideline rules, it may result in a higher risk of successful attacks. \n\nThe following rules have different severity")
+    section_text("The severity level of a rule in ModSecurity CRS affects the score that is assigned to a particular event or anomaly detected by that rule. Each severity level has a different weight or impact on the overall score that is calculated for a particular request.\n\n The severity levels are as follows:")
+    action1 = [['CRITICAL (level 5)','Indicates that the anomaly detected by the rule is very severe and requires immediate attention. A request that triggers such a rule would be assigned a high score, which would indicate that it is likely an attack'], ['ERROR (Level 4)', 'Indicates that the anomaly is serious and could result in a security breach if not addressed. A request that triggers such a rule would be assigned a high score, which would indicate that it is potentially malicious.'], ['WARNING (Level 3)', 'Indicates that the anomaly is of moderate severity and could potentially lead to a security issue. A request that triggers such a rule would be assigned a lower score than a critical or error-level rule.'], ['NOTICE (Level 2)', 'Indicates that the anomaly is of low severity and may not necessarily indicate an attack or security issue. A request that triggers such a rule would be assigned a low score.']]
+    table_2_by_2(action1)
     pdf.ln()
+    section_header_1("[WHY IS IT IMPORTANT]")
+    section_text("It is important to configure the WAF rules based on the severity of the application's security needs. If the configured WAF rules have a lower severity than the OWASP CRS Guideline rules, it may result in a higher risk of successful attacks. \n\nThe following rules have different severity")
     table_3_by_3("Rule ID", "Configured Severity", "Recommended Severity", severitys)
 else:
     section_text('All rules are currently using the latest version')
 
 section_header("Action")
-pdf.set_font('Arial', '', 12)
+section_header_1("[WHAT IS IT]")
 if is_action_same is False:
-    section_text('In ModSecurity, "pass", "deny", and "block" are actions that can be taken by a rule when a request or response matches that rule.\n "pass" means that the rule will be skipped and the request/response will be allowed to continue through the WAF without being blocked or flagged as an anomaly.\n"deny" means that the request will be blocked, and the client will receive a response indicating that their request was denied.\n"block" is similar to "deny" in that it also blocks the request, but it also generates an event that can be logged and alerts the WAF administrator to the attempted attack.\n\nThese actions are usually associated with the severity level of a rule, with higher severity rules being more likely to "deny" or "block" a request. The specific actions taken by a rule depend on the configuration of the WAF, including the desired level of protection, the sensitivity of the protected application, and the likelihood of false positives.\nHaving current configured rules to have lower restrictive actions such as "pass" when it should be a higher restrictive action such as "deny" can leave the system vulnerable to attacks.\nThe following rules have different actions:')
+    section_text('In ModSecurity, "pass", "deny", and "block" are actions that can be taken by a rule when a request or response matches that rule.\n\nThe various actions are as follows:')
+    action1 = [['pass', 'Rule will be skipped and the request/response will be allowed to continue through the WAF without being blocked or flagged as an anomaly.'], ['deny', 'Request will be blocked, and the client will receive a response indicating that their request was denied.'], ['block', 'similar to "deny" in that it also blocks the request, but it also generates an event that can be logged and alerts the WAF administrator to the attempted attack.']]
+    table_2_by_2(action1)
     pdf.ln()
+    section_header_1("[WHY IS IT IMPORTANT]")
+    section_text('These actions are usually associated with the severity level of a rule, with higher severity rules being more likely to "deny" or "block" a request. The specific actions taken by a rule depend on the configuration of the WAF, including the desired level of protection, the sensitivity of the protected application, and the likelihood of false positives.\nHaving current configured rules to have lower restrictive actions such as "pass" when it should be a higher restrictive action such as "deny" can leave the system vulnerable to attacks.\n\nThe following rules have different actions:')
     table_3_by_3("Rule ID", "Configured Action", "Recommended Action", actions)
 else:
     section_text('All rules are currently using the latest version')
+
+pdf.add_page()
+section_header("Scoring")
+section_header_1("[WHAT IS IT]")
+section_text('The OWASP CRS anomaly scoring system is derived by combining two factors: severity and paranoia level, with severity carrying a higher weight than paranoia level.\n\n')
+action1 = [['Severity', 'Is determined by the type of attack and the potential impact it could have on the system.'], ['Paranoia', 'Reflects the likelihood that the rule could generate false positives or block legitimate traffic.']]
+table_2_by_2(action1)
+pdf.ln()
+section_header_1("[WHY IS IT IMPORTANT]")
+section_text("The aim should be to achieve a score as close as possible to the score of the OWASP CRS Guideline. This indicates that the WAF configuration is aligned with the best practices outlined in the guideline.\nHowever, having a higher severity or paranoia level does not necessarily mean a rule is more secure. It means that the rule is more likely to detect and potentially block an attack that matches the rule's criteria. A rule with a high anomaly score is more likely to detect more sophisticated attacks, but it also increases the risk of false positives.\nIt is important to note that the anomaly scoring is just one aspect of WAF configuration management. Other factors such as the accuracy of the rules, false positives, and false negatives should also be considered in determining the effectiveness of the WAF. Please consider these factors with your organization's security objectives")
+section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
 
 pdf.output('test.pdf', 'F')
