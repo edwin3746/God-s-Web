@@ -172,6 +172,32 @@ def calculate_weighted_scores(file_path):
     #return guideline
     return round(total_weighted_score, 2)
 
+#Extract Violation and count from modsec_audit.log
+def parse_rule_violations(log_file):
+    rule_violations = {}
+    current_violation = None
+    
+    with open(log_file, "r") as file:
+        for line in file:
+            if line.startswith('--'):
+                if current_violation is not None:
+                    if current_violation not in rule_violations:
+                        rule_violations[current_violation] = {"count": 1}
+                    else:
+                        rule_violations[current_violation]["count"] += 1
+                current_violation = None
+            elif line.startswith('Message:'):
+                if current_violation is not None:
+                    current_violation += '\n' + line.strip()
+                else:
+                    current_violation = line.strip()
+
+    result = ""
+    for violation, data in rule_violations.items():
+        result += f'Violation: {violation}\nCount: {data["count"]}\n\n'
+
+    return result
+
 def create_arrray(w, x, y, z=None):
     array = []
     array.append(w)
@@ -262,6 +288,7 @@ total_score = calculate_weighted_scores("Guideline.json")
 waf_score = calculate_weighted_scores("waf.json")
 #print(total_score)
 #print(waf_score)
+result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 
 severitys = []
 is_severity_same = None
@@ -483,5 +510,13 @@ pdf.ln()
 section_header_1("[WHY IS IT IMPORTANT]")
 section_text("The aim should be to achieve a score as close as possible to the score of the OWASP CRS Guideline. This indicates that the WAF configuration is aligned with the best practices outlined in the guideline.\nHowever, having a higher severity or paranoia level does not necessarily mean a rule is more secure. It means that the rule is more likely to detect and potentially block an attack that matches the rule's criteria. A rule with a high anomaly score is more likely to detect more sophisticated attacks, but it also increases the risk of false positives.\nIt is important to note that the anomaly scoring is just one aspect of WAF configuration management. Other factors such as the accuracy of the rules, false positives, and false negatives should also be considered in determining the effectiveness of the WAF. Please consider these factors with your organization's security objectives")
 section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
+
+section_header("Log")
+section_header_1("[WHAT IS IT]")
+section_text('Test\n\n')
+pdf.ln()
+section_header_1("[WHY IS IT IMPORTANT]")
+pdf.ln()
+section_text(str(result))
 
 pdf.output('test.pdf', 'F')
