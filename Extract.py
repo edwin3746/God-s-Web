@@ -11,7 +11,6 @@ import platform
 import json
 import time
 
-
 guidelineURL ='https://github.com/coreruleset/coreruleset'
 if platform.system() == "Linux":
     guidelinePath = os.getcwd() + '/Guideline'
@@ -138,6 +137,12 @@ def convertToJSON(input_file_name, output_file_name):
     with open(output_file_name, "w") as file:
         file.write(json_data)
 
+def get_latest_tag(url):
+    process = subprocess.Popen(["git", "ls-remote", "--tags", "--refs", url], stdout=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    latest_tag = re.split(r'/|\n', stdout.decode('ascii'))[-2]
+    return latest_tag
+
 def main():
     ## If guideline does not exist, make a directory and clone the latest from github
     if not os.path.exists(guidelinePath):
@@ -145,19 +150,20 @@ def main():
         Repo.clone_from(guidelineURL,guidelinePath,progress=CloneProgress())
 
     ## Retrieve the hash of latest version from github
-    process = subprocess.Popen(["git", "ls-remote", guidelineURL], stdout=subprocess.PIPE)
-    stdout, stderr = process.communicate()
-    latestHash = re.split(r'\t+', stdout.decode('ascii'))[0]
-
-    ## Retrive the hash of the current version downloaded locally
+    latestTag = get_latest_tag(guidelineURL)
+    
+    ## Retrieve the hash of the current version downloaded locally
     try:
-        currentHash = Repo(guidelinePath)
+        repo = Repo(guidelinePath)
+        currentHash = repo.head.commit.hexsha
+        currentTag = repo.git.describe(tags=True)
         ## Compare hash to determine if there are any new updates to the guideline
-        if latestHash == currentHash.head.commit.hexsha:
-            print("The guideline is the latest version!")
+        if latestTag == currentTag:
+            print(f"The guideline is the latest version ({currentTag})!")
         else:
             shutil.rmtree(guidelinePath, ignore_errors=False)
             Repo.clone_from(guidelineURL,guidelinePath,progress=CloneProgress())
+            print(f"Updated to version {latestTag}!")
 
     except:
         print("Please delete the folder " + guidelinePath + " manually and re-run the program")
@@ -169,6 +175,10 @@ def main():
     #subprocess.run(['python', 'Compare.py'])
     os.system("sudo rm -r *.png")	
     os.system("python3 Compare.py")
+
 if __name__ == "__main__":
+    latestTag = get_latest_tag(guidelineURL)
     main()
+    
+
 
