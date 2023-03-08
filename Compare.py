@@ -20,6 +20,10 @@ import numpy as np
 #Date time
 from datetime import datetime
 import unicodedata
+import requests
+from Extract import get_latest_tag
+
+guidelineURL ='https://github.com/coreruleset/coreruleset'
 
 #Open the formatted JSON file to be used for comparison
 def open_json(file):
@@ -192,11 +196,33 @@ def parse_rule_violations(log_file):
                 else:
                     current_violation = line.strip()
 
-    result = ""
+    result = "Rule Violations:\n"
     for violation, data in rule_violations.items():
-        result += f'Violation: {violation}\nCount: {data["count"]}\n\n'
+        result += f'{violation}\nCount: {data["count"]}\n\n'
 
     return result
+
+
+result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
+#print(result)
+ruleList = result.split('\n\n')
+result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
+
+explanations_cache = {}
+
+def explain_regex(regex, id):
+    if id in explanations_cache:
+        return explanations_cache[regex]
+
+    url = 'https://api.regexplain.ai/api/v1/explain'
+    data = {'regex': regex}
+    headers = {'Content-Type':'application/json'}
+    response = requests.post(url,json=data,headers=headers)
+    explanation = response.text
+    
+    explanations_cache[regex] = explanation
+    return explanation
+
 
 def create_arrray(w, x, y, z=None):
     array = []
@@ -235,7 +261,8 @@ count = size2 - count1
 #pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
 
 #Compare the version of each rule found in the Guideline with those found in the WAF
-version = "4.0.0"
+version = get_latest_tag(guidelineURL)
+print(version)
 is_latest_version = None
 rules1 = []
 for i in range(size1):
@@ -332,6 +359,7 @@ for i in range(size1):
 
 request_headers = []
 is_request_header_same = None
+explanation = ""
 for i in range(size1):
     index = return_Index()
     if index != -1:
@@ -350,11 +378,15 @@ for i in range(size1):
                 guideline_value = value
                 break
         if guideline_key != waf_key or guideline_value != waf_value:
-            is_request_header_same = False
+            
             header = guideline_key + guideline_value
+            #if is_request_header_same == None:
+            #    explanation = explain_regex(header, guideline[i].get("id"))
+            is_request_header_same = False
             header1 = waf_key + waf_value
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
-            #print(header)
+            explanations_cache[guideline[i].get("id")] = explanation
+            request_header.append(explanation)
             request_headers.append(request_header)
         
 
@@ -432,7 +464,6 @@ pdf.add_page()
 section_header("Rule Variables")
 if is_request_header_same is False:
     if is_latest_version is False:
-        section_header_1("[WHAT IS IT]")
         section_text("Variables in ModSecurity rule are used to define conditions that trigger specific actions, such as blocking or logging a request")
     pdf.ln()
     section_header_1("[WHY IS IT IMPORTANT]")
@@ -462,6 +493,11 @@ if is_request_header_same is False:
         pdf.multi_cell(col_width, row_height, text_latin2, border=1, align='')
         pdf.ln()
         pdf.set_font('Arial', 'B', 12)
+        pdf.cell(col_width, row_height, 'Regex Explanation', border=1, align='')
+        pdf.ln()
+        pdf.set_font('Arial', '', 12)
+        pdf.multi_cell(col_width, row_height, str(request_headers[i][4]), border=1, align='')
+
 else:
     section_text('All rules have the same header')
 
@@ -475,26 +511,22 @@ else:
     
 pdf.add_page()
 section_header("Severity")
-section_header_1("[WHAT IS IT]")
 if is_severity_same is False:
     section_text("The severity level of a rule in ModSecurity CRS affects the score that is assigned to a particular event or anomaly detected by that rule. Each severity level has a different weight or impact on the overall score that is calculated for a particular request.\n\n The severity levels are as follows:")
     action1 = [['CRITICAL (level 5)','Indicates that the anomaly detected by the rule is very severe and requires immediate attention. A request that triggers such a rule would be assigned a high score, which would indicate that it is likely an attack'], ['ERROR (Level 4)', 'Indicates that the anomaly is serious and could result in a security breach if not addressed. A request that triggers such a rule would be assigned a high score, which would indicate that it is potentially malicious.'], ['WARNING (Level 3)', 'Indicates that the anomaly is of moderate severity and could potentially lead to a security issue. A request that triggers such a rule would be assigned a lower score than a critical or error-level rule.'], ['NOTICE (Level 2)', 'Indicates that the anomaly is of low severity and may not necessarily indicate an attack or security issue. A request that triggers such a rule would be assigned a low score.']]
     table_2_by_2(action1)
     pdf.ln()
-    section_header_1("[WHY IS IT IMPORTANT]")
     section_text("It is important to configure the WAF rules based on the severity of the application's security needs. If the configured WAF rules have a lower severity than the OWASP CRS Guideline rules, it may result in a higher risk of successful attacks. \n\nThe following rules have different severity")
     table_3_by_3("Rule ID", "Configured Severity", "Recommended Severity", severitys)
 else:
     section_text('All rules are currently using the latest version')
 
 section_header("Action")
-section_header_1("[WHAT IS IT]")
 if is_action_same is False:
     section_text('In ModSecurity, "pass", "deny", and "block" are actions that can be taken by a rule when a request or response matches that rule.\n\nThe various actions are as follows:')
     action1 = [['pass', 'Rule will be skipped and the request/response will be allowed to continue through the WAF without being blocked or flagged as an anomaly.'], ['deny', 'Request will be blocked, and the client will receive a response indicating that their request was denied.'], ['block', 'similar to "deny" in that it also blocks the request, but it also generates an event that can be logged and alerts the WAF administrator to the attempted attack.']]
     table_2_by_2(action1)
     pdf.ln()
-    section_header_1("[WHY IS IT IMPORTANT]")
     section_text('These actions are usually associated with the severity level of a rule, with higher severity rules being more likely to "deny" or "block" a request. The specific actions taken by a rule depend on the configuration of the WAF, including the desired level of protection, the sensitivity of the protected application, and the likelihood of false positives.\nHaving current configured rules to have lower restrictive actions such as "pass" when it should be a higher restrictive action such as "deny" can leave the system vulnerable to attacks.\n\nThe following rules have different actions:')
     table_3_by_3("Rule ID", "Configured Action", "Recommended Action", actions)
 else:
@@ -502,12 +534,10 @@ else:
 
 pdf.add_page()
 section_header("Scoring")
-section_header_1("[WHAT IS IT]")
 section_text('The OWASP CRS anomaly scoring system is derived by combining two factors: severity and paranoia level, with severity carrying a higher weight than paranoia level.\n\n')
 action1 = [['Severity', 'Is determined by the type of attack and the potential impact it could have on the system.'], ['Paranoia', 'Reflects the likelihood that the rule could generate false positives or block legitimate traffic.']]
 table_2_by_2(action1)
 pdf.ln()
-section_header_1("[WHY IS IT IMPORTANT]")
 section_text("The aim should be to achieve a score as close as possible to the score of the OWASP CRS Guideline. This indicates that the WAF configuration is aligned with the best practices outlined in the guideline.\nHowever, having a higher severity or paranoia level does not necessarily mean a rule is more secure. It means that the rule is more likely to detect and potentially block an attack that matches the rule's criteria. A rule with a high anomaly score is more likely to detect more sophisticated attacks, but it also increases the risk of false positives.\nIt is important to note that the anomaly scoring is just one aspect of WAF configuration management. Other factors such as the accuracy of the rules, false positives, and false negatives should also be considered in determining the effectiveness of the WAF. Please consider these factors with your organization's security objectives")
 pdf.ln()
 section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
@@ -518,12 +548,14 @@ elif waf_score >= total_score * 0.95 and waf_score <= total_score * 1.05:
 else:
     section_text("Your average weighted score is lower than guideline by a significant amount. This suggests that your WAF may not be following the security posture recommended by the guideline and is not adequately protecting the web application against attacks. It is important to investigate the reasons for the low weighted score and take appropriate actions to improve the security of the web application. This may involve reviewing and updating the WAF rule sets according to the severity and paranoia levels stated in the guideline.")
 
-section_header("Log")
-section_header_1("[WHAT IS IT]")
-section_text('Test\n\n')
+pdf.add_page()
+section_header("Rule Violations")
+section_text('This section outlines the rule violations detected by the WAF. In ModSecurity, rule violations are incidents when a request matches a defined rule or set of rules that are designed to detect and prevent malicious activity. When a rule is triggered, it generates a log entry in the ModSecurity audit log file, which contains information about the request, the rule that was triggered, and other relevant details. To view more information, please refer to the ModSecurity audit log file at /var/log/apache2/modsec_audit.log')  
 pdf.ln()
-section_header_1("[WHY IS IT IMPORTANT]")
+section_text('It is important to keep track of rule violations in ModSecurity audit logs because it can help to detect and prevent potential security threats to your web application. By reviewing the log entries, you can identify patterns of suspicious activity or attacks and take appropriate measures to protect your application from those threats.')
 pdf.ln()
-section_text(str(result))
-
+section_text('These are the violations found, shown with the rules triggered and number of hits.')
+for i in range(len(ruleList)):
+    pdf.multi_cell(col_width, row_height, str(ruleList[i]), border=1, align='')
+    pdf.ln()
 pdf.output('test.pdf', 'F')
