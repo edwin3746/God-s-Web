@@ -1,7 +1,4 @@
 import json
-#from git import Repo
-#from git import RemoteProgress
-#from git import rmtree
 from tqdm import tqdm
 import os
 import subprocess
@@ -47,11 +44,11 @@ def extract_score(rule):
     return anomaly_score, severity
 
 #Function can be used to check if rule exists on WAF. If exists, return index. Else return -1
-def return_Index():
+def return_Index(i):
     index = -1
     ruleID = guideline[i].get("id")
     for j, obj in enumerate(waf):
-        if obj.get("id") == ruleID:
+        if obj.get("id") == ruleID and ruleID is not None:
             index = j
             break
     return index
@@ -77,33 +74,7 @@ def pie_chart(x, y, xlabel, ylabel, title1):
             i += 1
         filename = f'pie_chart_{i}.png'
     plt.savefig(filename)
-    #plt.savefig('pie_chart.png')
     
-#Calculate Score --> x = WAF / Guideline
-#def calculate_score(x):
-#    total_score = 0
-#    for rule in x:
-#        anomaly_score, severity = extract_score(rule)
-#        # Skip over rules without anomaly score and severity
-#        if anomaly_score is None and severity is None:
-#            continue
-        # Assign score according to anomaly score and severity
-#        score = 0
-#        if anomaly_score is not None:
-#            score += anomaly_score
-#        if severity == "CRITICAL":
-#            score += 5
-#        elif severity == "ERROR":
-#            score += 4
-#        elif severity == "WARNING":
-#            score += 3
-#        elif severity == "NOTICE":
-#            score += 2
-#        total_score += score
-        # Add the score to the rule dictionary
- #       rule["score"] = score
-    #print(json.dumps(guideline, indent=4))
-#    return total_score
 def calculate_weighted_scores(file_path):
     # Open the formatted JSON file to be used for comparison
     def open_json(file):
@@ -204,24 +175,46 @@ def parse_rule_violations(log_file):
 
 
 result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
-#print(result)
 ruleList = result.split('\n\n')
 result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 
-explanations_cache = {}
 
-def explain_regex(regex, id):
-    if id in explanations_cache:
-        return explanations_cache[regex]
+def explain_regex(regex, id, type):
+    #Open the Guideline_regex.json file
+    if type == "guideline":
+        guideline_regex = open_json("Guideline_regex.json")
+    else:
+        guideline_regex = open_json("waf_regex.json")
+    #Check if guideline contains id
+    for i in range(len(guideline_regex)):
+        if guideline_regex[i].get("id") == id and guideline_regex[i].get("regex") == regex:
+            explanation = guideline_regex[i].get("explanation")
+            print("hehe no call needed")
+            return explanation
 
+    #Else make call
     url = 'https://api.regexplain.ai/api/v1/explain'
     data = {'regex': regex}
     headers = {'Content-Type':'application/json'}
     response = requests.post(url,json=data,headers=headers)
     explanation = response.text
-    
-    explanations_cache[regex] = explanation
-    return explanation
+    explanation_trim = explanation.index("This") + len("This")
+    explanation_trim1 = explanation.index('"}', explanation_trim)
+    trimmed_sentece = explanation[explanation_trim: explanation_trim1].strip()
+    trimmed_sentece = "This " + trimmed_sentece
+    regex_dict = {}
+    regex_dict["id"] = id
+    regex_dict["regex"] = regex
+    regex_dict["explanation"] = trimmed_sentece
+    guideline_regex.append(regex_dict)
+
+    if type == "guideline":
+        with open("Guideline_regex.json", "w") as f:
+            json.dump(guideline_regex, f)
+    else:
+        with open("waf_regex.json", "w") as f:
+            json.dump(guideline_regex, f)
+    return trimmed_sentece
 
 
 def create_arrray(w, x, y, z=None):
@@ -235,6 +228,7 @@ def create_arrray(w, x, y, z=None):
         array.append(z)
     return array
 
+rules_with_differences = []
 
 guideline = open_json("Guideline.json")
 waf = open_json("waf.json")
@@ -244,29 +238,29 @@ waf = open_json("waf.json")
 size1 = len(guideline)
 #Number of rules on the web
 size2 = len(waf)
-
 #Var count stores the number of rules that is in the guideline but not in the WAF
 count = 0
 for i in range(size1):
-    index = return_Index()
+    index = return_Index(i)
     if index == -1:
         count += 1
         
-#pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
+pie_chart(count, size1, "Not in WAF", "In WAF", "Percentage of rules in guidelines but not in waf")
 
 #Number of rules in the guideline that is in the WAF
 count1 = size1 - count
 #Number of rules in the WAF that is not part of CRS
 count = size2 - count1
-#pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
+pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
 
 #Compare the version of each rule found in the Guideline with those found in the WAF
 version = get_latest_tag(guidelineURL)
+version = version[1:-4].strip()
 print(version)
 is_latest_version = None
 rules1 = []
 for i in range(size1):
-    index = return_Index()
+    index = return_Index(i)
     #Rule is CRS
     if index != -1:
         version_string = waf[index].get("ver")
@@ -281,36 +275,37 @@ for i in range(size1):
                     id = waf[index].get("id")
                     rule = create_arrray(id, version_number, version)
                     rules1.append(rule)
+                    rules_with_differences.append(waf[index].get("id"))
         except:
             pass
 #Count the number of rules related to Top 5 web attacks
-attacks = {"XSS": 0, "SQL": 0, "Path Traversal": 0, "File Inclusion": 0, "DDoS": 0, "Others": 0}
-for rules in waf:
-    if "xss" in str(rules.values()).lower():
-        attacks["XSS"] += 1
-    elif "sql" in str(rules.values()).lower():
-        attacks["SQL"] += 1
-    elif "path traversal" in str(rules.values()).lower():
-        attacks["Path Traversal"] += 1
-    elif "file inclusion" in str(rules.values()).lower():
-        attacks["File Inclusion"] += 1
-    elif "dos" in str(rules.values()).lower():
-        attacks["DDoS"] += 1
-    else:
-        attacks["Others"] += 1
+#attacks = {"XSS": 0, "SQL": 0, "Path Traversal": 0, "File Inclusion": 0, "DDoS": 0, "Others": 0}
+#for rules in waf:
+#    if "xss" in str(rules.values()).lower():
+#        attacks["XSS"] += 1
+#    elif "sql" in str(rules.values()).lower():
+#        attacks["SQL"] += 1
+#    elif "path traversal" in str(rules.values()).lower():
+#        attacks["Path Traversal"] += 1
+#    elif "file inclusion" in str(rules.values()).lower():
+#        attacks["File Inclusion"] += 1
+#    elif "dos" in str(rules.values()).lower():
+#        attacks["DDoS"] += 1
+#    else:
+#        attacks["Others"] += 1
 
-plt.clf()
-proportions = np.array(list(attacks.values()))
-labels = np.array(list(attacks.keys()))
-colors = ['red','orange','yellow','green','blue','violet']
-plt.bar(labels, proportions, color=colors)
+#plt.clf()
+#proportions = np.array(list(attacks.values()))
+#labels = np.array(list(attacks.keys()))
+#colors = ['red','orange','yellow','green','blue','violet']
+#3plt.bar(labels, proportions, color=colors)
 # Set the tick positions and labels
-plt.xticks(np.arange(len(labels)), labels)
+#plt.xticks(np.arange(len(labels)), labels)
 # Adjust the spacing of the labels
-plt.gcf().autofmt_xdate(rotation=45)
-plt.savefig("Bargraph1.png")
-#total_score = calculate_score(guideline)
-#waf_score = calculate_score(waf)
+#plt.gcf().autofmt_xdate(rotation=45)
+#plt.savefig("Bargraph1.png")
+#total_score = calculate_score(guideline)af_score = calculate_score(waf)
+#
 total_score = calculate_weighted_scores("Guideline.json")
 waf_score = calculate_weighted_scores("waf.json")
 #print(total_score)
@@ -320,7 +315,7 @@ result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 severitys = []
 is_severity_same = None
 for i in range(size1):
-    index = return_Index()
+    index = return_Index(i)
     if index != -1:
         Guideline_severity = guideline[i].get("severity")
         WAF_severity = waf[index].get("severity")
@@ -328,11 +323,12 @@ for i in range(size1):
             is_severity_same = False
             severity = create_arrray(waf[index].get("id"), WAF_severity, Guideline_severity)
             severitys.append(severity)
+            rules_with_differences.append(waf[index].get("id"))
 
 actions = []
 is_action_same = None
 for i in range(size1):
-    index = return_Index()
+    index = return_Index(i)
     if index != -1:
         if guideline[i].get("id") == waf[index].get("id"):
             guideline_keys = guideline[i].keys()
@@ -356,12 +352,13 @@ for i in range(size1):
                 id1 = guideline[i].get("id")
                 action = create_arrray(waf[index].get("id"), waf_action, guideline_action)
                 actions.append(action)
+                rules_with_differences.append(waf[index].get("id"))
 
 request_headers = []
 is_request_header_same = None
 explanation = ""
 for i in range(size1):
-    index = return_Index()
+    index = return_Index(i)
     if index != -1:
         waf_key = 0
         waf_value = 0
@@ -378,16 +375,22 @@ for i in range(size1):
                 guideline_value = value
                 break
         if guideline_key != waf_key or guideline_value != waf_value:
-            
             header = guideline_key + guideline_value
-            #if is_request_header_same == None:
-            #    explanation = explain_regex(header, guideline[i].get("id"))
-            is_request_header_same = False
             header1 = waf_key + waf_value
+            if is_request_header_same == None:
+                explanation = explain_regex(header, guideline[i].get("id"), "guideline")
+                explanation1 = explain_regex(header, waf[index].get("id"), "waf")
+            is_request_header_same = False
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
-            explanations_cache[guideline[i].get("id")] = explanation
             request_header.append(explanation)
+            request_header.append(explanation1)
             request_headers.append(request_header)
+            rules_with_differences.append(waf[index].get("id"))
+
+unique_sorted_array = sorted(set(rules_with_differences))
+pie_chart(len(unique_sorted_array), count1, "With difference", "No difference", "Rules deployed on WAF")
+
+
         
 
 #---------------------------------Prepping PDF-------------------------------
@@ -395,14 +398,9 @@ def section_header(section_name):
     pdf.set_font('Arial', 'B', 15)
     pdf.cell(0, 20, section_name, 'B', 1, '')
 
-def section_header_1(section_text):
-    pdf.set_font('Arial', 'B', 12)
-    pdf.multi_cell(0, 7, section_text, 0, 1, '')
-
 def section_text(section_text):
     pdf.set_font('Arial', '', 12)
     pdf.multi_cell(0, 7, section_text, 0, 1, '')
-
 
 def table_3_by_3(col1, col2, col3, data_array):
     pdf.set_font('Arial', 'B', 12)
@@ -432,6 +430,13 @@ def table_2_by_2(data_array):
         pdf.multi_cell(col_width, row_height, str(data_array[i][1]), border=1, align='')
         pdf.set_font('Arial', 'B', 12)
 
+def table_variable(row_heading, data):
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(col_width, row_height, row_heading, border=1, align='')
+    pdf.ln()
+    pdf.set_font('Arial', '', 12)
+    pdf.multi_cell(col_width, row_height, data, border=1, align='')
+
 pdf = FPDF()
 pdf.add_page()
 pdf.set_font('Arial', 'B', 30)
@@ -443,61 +448,41 @@ pdf.multi_cell(0, 7, description, 0, 1, '')
 section_header("Overview")
 section_text("This report presents the results of God's Web, which is designed to evaluate the configuration of an OWASP Web Application Firewall (WAF) against the OWASP Core Rule Set (CRS) best practices. The tool assesses whether each CRS rule is present in the WAF configuration and ensures that the security levels of each rule cannot be lower than the CRS guidelines. The results of the audit tool are presented in the following sections, providing key findings and recommendations for improving the WAF configuration to align with CRS best practices.")
 
-#section_header("Scoring")
-#section_text("The security level score of the current WAF rules are compared to CRS guideline, the closer the score is to the guideline, the more closely the security level aligns with best practices.")
-#section_text('Obtained Score: ' + str(waf_score) + ' / ' + str(total_score))
-#pdf.ln()
-
 section_header("Compliance")
-section_text("The following pie chart shows the distribution of WAF rules that are included in the guideline but are not present in the WAF, expressed as a percentage of the total number of WAF rules.")
-pdf.image('pie_chart.png', 30, 185, w = 140, h = 120, type = '', link = '')
+section_text("Of the " + str(size1) + " rules in the guideline, only " + str(count1) + " of them are deployed on the WAF. The following pie chart shows the distribution of WAF rules that are included in the guideline but are not present in the WAF, expressed as a percentage of the total number of WAF rules.")
+pdf.image('pie_chart.png', 30, 155, w = 140, h = 120, type = '', link = '')
+pdf.add_page()
+section_text("Of the " + str(count1) + " rules deplyed on the WAF, " + str(len(unique_sorted_array)) + " of them have different configurations from the guideline. The following pie chart shows the distribution of WAF rules that are found to be different, expressed as a percentage of the total number of WAF rules.")
+pdf.image('pie_chart_2.png', 30, 30, w = 140, h = 120, type = '', link = '')
 
 pdf.add_page()
 section_header("WAF Breakdown")
-section_text("The following pie chart shows the distribution of WAF rules that are included in the ModSecurity Core Rule Set (CRS) and custom rules, expressed as a percentage of the total number of WAF rules.")
+section_text("Of the " + str(size2) + " rules on the WAF, only " + str(count1) +  " of them are included in the ModSecurity Core Rule Set (CRS). The following pie chart shows the distribution of WAF rules that are included in the ModSecurity Core Rule Set (CRS) and custom rules, expressed as a percentage of the total number of WAF rules.")
 pdf.image('pie_chart_1.png', 30, 50, w = 140, h = 120, type = '', link = '')
-pdf.set_y(160) # move cursor position to below the image
-section_text("The following bar graph shows the distribution of WAF rules enabled on the WAF for the most common types of web attacks, as reported by TrustNet")
-pdf.image('Bargraph1.png', 30, 175, w = 140, h = 120, type = '', link = '')
+pdf.set_y(160)
+
 
 pdf.add_page()
 section_header("Rule Variables")
 if is_request_header_same is False:
-    if is_latest_version is False:
-        section_text("Variables in ModSecurity rule are used to define conditions that trigger specific actions, such as blocking or logging a request")
+    section_text("Variables in ModSecurity rule are used to define conditions that trigger specific actions, such as blocking or logging a request")
     pdf.ln()
-    section_header_1("[WHY IS IT IMPORTANT]")
     section_text("If ModSecurity variables are set incorrectly, it can lead to unexpected behavior or errors in the rules processing. This can result in the rules not functioning as intended, or potentially blocking legitimate traffic.\n\nThe following rules have different variables configured: ")
-    pdf.set_font('Arial', 'B', 12)
     col_width = pdf.w / 1.1
     row_height = pdf.font_size * 2
     for i in range(len(request_headers)):
+        pdf.set_font('Arial', 'B', 12)
         message = "Rule ID:" + str(request_headers[i][0])
         pdf.cell(col_width, row_height, message, border=1, align='C')
         pdf.ln()
-        pdf.cell(col_width, row_height, 'Description', border=1, align='')
-        pdf.ln()
-        pdf.set_font('Arial', '', 12)
-        pdf.multi_cell(col_width, row_height, str(request_headers[i][3]), border=1, align='')
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(col_width, row_height, 'Configured Header', border=1, align='')
-        pdf.ln()
-        pdf.set_font('Arial', '', 12)
+        table_variable("Description", str(request_headers[i][3]))
         text_latin1 = unicodedata.normalize('NFKD', str(request_headers[i][1])).encode('latin-1', 'ignore').decode('latin-1')
-        pdf.multi_cell(col_width, row_height, text_latin1, border=1, align='')
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(col_width, row_height, 'Recommended Header', border=1, align='')
-        pdf.ln()
-        pdf.set_font('Arial', '', 12)
+        table_variable("Configured Variable", text_latin1)
+        table_variable("Configured Regex Explanation", str(request_headers[i][5]))
         text_latin2 = unicodedata.normalize('NFKD', str(request_headers[i][2])).encode('latin-1', 'ignore').decode('latin-1')
-        pdf.multi_cell(col_width, row_height, text_latin2, border=1, align='')
+        table_variable("Recommended Variable", text_latin2)
+        table_variable("Recommended Regex Explanation", str(request_headers[i][4]))
         pdf.ln()
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(col_width, row_height, 'Regex Explanation', border=1, align='')
-        pdf.ln()
-        pdf.set_font('Arial', '', 12)
-        pdf.multi_cell(col_width, row_height, str(request_headers[i][4]), border=1, align='')
-
 else:
     section_text('All rules have the same header')
 
@@ -520,7 +505,7 @@ if is_severity_same is False:
     table_3_by_3("Rule ID", "Configured Severity", "Recommended Severity", severitys)
 else:
     section_text('All rules are currently using the latest version')
-
+pdf.add_page()
 section_header("Action")
 if is_action_same is False:
     section_text('In ModSecurity, "pass", "deny", and "block" are actions that can be taken by a rule when a request or response matches that rule.\n\nThe various actions are as follows:')
@@ -558,4 +543,4 @@ section_text('These are the violations found, shown with the rules triggered and
 for i in range(len(ruleList)):
     pdf.multi_cell(col_width, row_height, str(ruleList[i]), border=1, align='')
     pdf.ln()
-pdf.output('test.pdf', 'F')
+pdf.output(str(datetime.now()) + '.pdf', 'F')
