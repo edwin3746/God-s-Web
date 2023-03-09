@@ -57,12 +57,19 @@ def return_Index(i):
 def pie_chart(x, y, xlabel, ylabel, title1):
     #clear the previous plot
     plt.clf()
-    # Calculate the proportion of variable1 and variable2
-    proportions = [x, y - x]
-    # Define the labels for the pie chart
-    labels = [xlabel, ylabel]
-    # Define the colors for the pie chart
-    colors = ['#ff9999','#66b3ff']
+    if x != 0:
+        # Calculate the proportion of variable1 and variable2
+        proportions = [x, y - x]
+        # Define the labels for the pie chart
+        labels = [xlabel, ylabel]
+        # Define the colors for the pie chart
+        colors = ['#ff9999','#66b3ff']
+        print(y, x)
+    elif x == 0:
+        proportions = [y]
+        labels = [ylabel]
+        colors = ['#66b3ff']
+        print("hiiii")
     # Create the pie chart
     plt.pie(proportions, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
     # Add a title to the pie chart
@@ -140,10 +147,6 @@ def calculate_weighted_scores(file_path):
         rule["weighted_score"] = weighted_score
 
         total_weighted_score += weighted_score
-
-    # Calculate average weighted score per rule
-    #print("Total weighted score:", round(total_weighted_score, 2))
-
     #return guideline
     return round(total_weighted_score, 2)
 
@@ -151,6 +154,7 @@ def calculate_weighted_scores(file_path):
 def parse_rule_violations(log_file):
     rule_violations = {}
     current_violation = None
+    log_file = "/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log"
     
     with open(log_file, "r") as file:
         for line in file:
@@ -174,9 +178,9 @@ def parse_rule_violations(log_file):
     return result
 
 
-result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
+result = parse_rule_violations("/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log")
 ruleList = result.split('\n\n')
-result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
+result = parse_rule_violations("/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log")
 
 
 def explain_regex(regex, id, type):
@@ -198,10 +202,13 @@ def explain_regex(regex, id, type):
     headers = {'Content-Type':'application/json'}
     response = requests.post(url,json=data,headers=headers)
     explanation = response.text
-    explanation_trim = explanation.index("This") + len("This")
-    explanation_trim1 = explanation.index('"}', explanation_trim)
-    trimmed_sentece = explanation[explanation_trim: explanation_trim1].strip()
-    trimmed_sentece = "This " + trimmed_sentece
+    try:
+        explanation_trim = explanation.index("This") + len("This")
+        explanation_trim1 = explanation.index('"}', explanation_trim)
+        trimmed_sentece = explanation[explanation_trim: explanation_trim1].strip()
+        trimmed_sentece = "This " + trimmed_sentece
+    except:
+        trimmed_sentece = explanation
     regex_dict = {}
     regex_dict["id"] = id
     regex_dict["regex"] = regex
@@ -231,8 +238,8 @@ def create_arrray(w, x, y, z=None):
 rules_with_differences = []
 
 guideline = open_json("Guideline.json")
-waf = open_json("waf.json")
-#waf = open_json("Guideline.json")
+#waf = open_json("waf.json")
+waf = open_json("Guideline_copy.json")
 
 #Number of rules in the guideline
 size1 = len(guideline)
@@ -307,7 +314,7 @@ for i in range(size1):
 #total_score = calculate_score(guideline)af_score = calculate_score(waf)
 #
 total_score = calculate_weighted_scores("Guideline.json")
-waf_score = calculate_weighted_scores("waf.json")
+waf_score = calculate_weighted_scores("Guideline_copy.json")
 #print(total_score)
 #print(waf_score)
 result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
@@ -379,7 +386,7 @@ for i in range(size1):
             header1 = waf_key + waf_value
             if is_request_header_same == None:
                 explanation = explain_regex(header, guideline[i].get("id"), "guideline")
-                explanation1 = explain_regex(header, waf[index].get("id"), "waf")
+                explanation1 = explain_regex(header1, waf[index].get("id"), "waf")
             is_request_header_same = False
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
             request_header.append(explanation)
@@ -460,7 +467,8 @@ section_header("WAF Breakdown")
 section_text("Of the " + str(size2) + " rules on the WAF, only " + str(count1) +  " of them are included in the ModSecurity Core Rule Set (CRS). The following pie chart shows the distribution of WAF rules that are included in the ModSecurity Core Rule Set (CRS) and custom rules, expressed as a percentage of the total number of WAF rules.")
 pdf.image('pie_chart_1.png', 30, 50, w = 140, h = 120, type = '', link = '')
 pdf.set_y(160)
-
+col_width = pdf.w / 1.1
+row_height = pdf.font_size * 2
 
 pdf.add_page()
 section_header("Rule Variables")
@@ -468,8 +476,8 @@ if is_request_header_same is False:
     section_text("Variables in ModSecurity rule are used to define conditions that trigger specific actions, such as blocking or logging a request")
     pdf.ln()
     section_text("If ModSecurity variables are set incorrectly, it can lead to unexpected behavior or errors in the rules processing. This can result in the rules not functioning as intended, or potentially blocking legitimate traffic.\n\nThe following rules have different variables configured: ")
-    col_width = pdf.w / 1.1
-    row_height = pdf.font_size * 2
+    #col_width = pdf.w / 1.1
+    #row_height = pdf.font_size * 2
     for i in range(len(request_headers)):
         pdf.set_font('Arial', 'B', 12)
         message = "Rule ID:" + str(request_headers[i][0])
@@ -477,10 +485,10 @@ if is_request_header_same is False:
         pdf.ln()
         table_variable("Description", str(request_headers[i][3]))
         text_latin1 = unicodedata.normalize('NFKD', str(request_headers[i][1])).encode('latin-1', 'ignore').decode('latin-1')
-        table_variable("Configured Variable", text_latin1)
-        table_variable("Configured Regex Explanation", str(request_headers[i][5]))
         text_latin2 = unicodedata.normalize('NFKD', str(request_headers[i][2])).encode('latin-1', 'ignore').decode('latin-1')
-        table_variable("Recommended Variable", text_latin2)
+        table_variable("Configured Variable", text_latin2)
+        table_variable("Configured Regex Explanation", str(request_headers[i][5]))
+        table_variable("Recommended Variable", text_latin1)
         table_variable("Recommended Regex Explanation", str(request_headers[i][4]))
         pdf.ln()
 else:
@@ -543,4 +551,5 @@ section_text('These are the violations found, shown with the rules triggered and
 for i in range(len(ruleList)):
     pdf.multi_cell(col_width, row_height, str(ruleList[i]), border=1, align='')
     pdf.ln()
-pdf.output(str(datetime.now()) + '.pdf', 'F')
+#pdf.output(str(datetime.now()) + '.pdf', 'F')
+pdf.output('test.pdf', 'F')
