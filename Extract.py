@@ -174,7 +174,7 @@ def main():
     time.sleep(5)
     #subprocess.run(['python', 'Compare.py'])
     os.system("sudo rm -r *.png")	
-    os.system("python3 Compare.py")
+    os.system("python3 Comparev2.py")
 
 if __name__ == "__main__":
     latestTag = get_latest_tag(guidelineURL)
