@@ -1,0 +1,7 @@
+json
+tqdm
+pandas
+matplotlib
+fpdf
+numpy
+requests
