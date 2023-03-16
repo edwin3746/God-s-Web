@@ -64,12 +64,11 @@ def pie_chart(x, y, xlabel, ylabel, title1):
         labels = [xlabel, ylabel]
         # Define the colors for the pie chart
         colors = ['#ff9999','#66b3ff']
-        print(y, x)
+        #print(y, x)
     elif x == 0:
         proportions = [y]
         labels = [ylabel]
         colors = ['#66b3ff']
-        print("hiiii")
     # Create the pie chart
     plt.pie(proportions, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
     # Add a title to the pie chart
@@ -117,7 +116,7 @@ def calculate_weighted_scores(file_path):
         return anomaly_score, paranoia_level, severity
 
     guideline = open_json(file_path)
-    print("Number of rules:", len(guideline))
+    #print("Number of rules:", len(guideline))
     total_weighted_score = 0
     w1 = 0.2 # weight for anomaly score
     w2 = 0.2 # weight for paranoia level
@@ -154,9 +153,8 @@ def calculate_weighted_scores(file_path):
 def parse_rule_violations(log_file):
     rule_violations = {}
     current_violation = None
-    log_file = "/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log"
     
-    with open(log_file, "r") as file:
+    with open(log_file, "r", encoding="utf-8", errors="ignore") as file:
         for line in file:
             if line.startswith('--'):
                 if current_violation is not None:
@@ -178,9 +176,9 @@ def parse_rule_violations(log_file):
     return result
 
 
-result = parse_rule_violations("/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log")
+result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 ruleList = result.split('\n\n')
-result = parse_rule_violations("/Users/imac/Desktop/2206/var/log/apache2/modsec_audit.log")
+result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 
 
 def explain_regex(regex, id, type):
@@ -193,7 +191,7 @@ def explain_regex(regex, id, type):
     for i in range(len(guideline_regex)):
         if guideline_regex[i].get("id") == id and guideline_regex[i].get("regex") == regex:
             explanation = guideline_regex[i].get("explanation")
-            print("hehe no call needed")
+            print("Regex exists. No Call is needed.")
             return explanation
 
     #Else make call
@@ -223,6 +221,351 @@ def explain_regex(regex, id, type):
             json.dump(guideline_regex, f)
     return trimmed_sentece
 
+# creating data structures to store configurations of ModSecurity
+def enableModSecurityDict():
+    return {
+        "SecRuleEngine": None
+    }
+
+
+def requestBodyDict():
+    return {
+        "SecRequestBodyAccess": None,
+        "SecRequestBodyLimit": None,
+        "SecRequestBodyNoFilesLimit": None,
+        "SecRequestBodyLimitAction": None,
+        "SecRequestBodyJsonDepthLimit": None,
+        "SecPcreMatchLimit": None,
+        "SecPcreMatchLimitRecursion": None
+    }
+
+
+def responseBodyDict():
+    return {
+        "SecResponseBodyAccess": None,
+        "SecResponseBodyMimeType": None,
+        "SecResponseBodyLimit": None,
+        "SecResponseBodyLimitAction": None
+    }
+
+
+def uploadDict():
+    return {
+        "SecUploadDir": None,
+        "SecUploadKeepFiles": None,
+        "SecUploadFileMode": None
+    }
+
+
+def debugLogDict():
+    return {
+        "SecDebugLog": None,
+        "SecDebugLogLevel": None
+    }
+
+
+def auditLogDict():
+    return {
+        "SecAuditEngine": None,
+        "SecAuditLogRelevantStatus": None,
+        "SecAuditLogParts": None,
+        "SecAuditLogType": None,
+        "SecAuditLog": None,
+        "SecAuditLogStorageDir": None
+    }
+
+
+def filesystemConfigDict():
+    return {
+        "SecTmpDir": None,
+        "SecDataDir": None
+    }
+
+
+def miscConfigDict():
+    return {
+        "SecArgumentSeparator": None,
+        "SecCookieFormat": None,
+        "SecUnicodeMapFile": None,
+        "SecStatusEngine": None
+    }
+
+def readConfigFile(filename, dict):
+    # convert the config files into dictionaries
+    configFile = open(filename, 'r')
+    lines = configFile.readlines()
+    for line in lines:
+        if not line.isspace() and not line.startswith('#'):
+            for key in dict:
+                lineList = line.split(" ", 1)
+                if lineList[0] == key:
+                    if len(lineList[1:]) == 1:
+                        dict.update({key: lineList[1]})
+                    else:
+                        dict.update({key: lineList[1:]})
+
+    return dict
+
+# comparing each section of the config
+def checkModSecurityEnabled(modSecurityEnabled, pdf):
+
+    secRuleEngine = modSecurityEnabled.get('SecRuleEngine').strip()
+
+    if secRuleEngine == "On":
+        explanation = "ModSecurity is enabled and any rules configured will be processed."
+        create_table("SecRuleEngine", modSecurityEnabled.get('SecRuleEngine'),
+                     "-", explanation, pdf)
+    elif secRuleEngine == "DetectionOnly":
+        explanation = "ModSecurity is enabled and any rules will be processed, but will not execute any disruptive actions."
+        create_table("SecRuleEngine", modSecurityEnabled.get('SecRuleEngine'),
+                     "-", explanation, pdf)
+    elif secRuleEngine == "Off":
+        explanation = "ModSecurity is disabled and no rules will be processed."
+        create_table("SecRuleEngine", modSecurityEnabled.get('SecRuleEngine'),
+                     "-", explanation, pdf)
+    else:
+        explanation = "Invalid setting, valid settings are On|Off|DetectionOnly"
+        create_table("SecRuleEngine", modSecurityEnabled.get('SecRuleEngine'),
+                     "-", explanation, pdf)
+
+    return pdf
+
+def checkRequestBodyConfig(currentRequestConfig, recommendedRequestConfig, pdf):
+
+    if currentRequestConfig.get('SecRequestBodyAccess') == recommendedRequestConfig.get('SecRequestBodyAccess'):
+        if currentRequestConfig.get('SecRequestBodyLimit') != recommendedRequestConfig.get('SecRequestBodyLimit'):
+            if int(currentRequestConfig.get('SecRequestBodyLimit')) > 1073741824:
+                explanation = "ModSecurity will automatically drop any files above 1GB in size, please reduce this number."
+                create_table( "SecRequestBodyAccess",currentRequestConfig.get('SecRequestBodyLimit'), recommendedRequestConfig.get('SecRequestBodyAccess'), explanation, pdf)
+        if currentRequestConfig.get('SecRequestBodyNoFilesLimit') != recommendedRequestConfig.get('SecRequestBodyNoFilesLimit'):
+            if int(currentRequestConfig.get('SecRequestBodyNoFilesLimit')) > 1073741824:
+                explanation = "ModSecurity will automatically drop any files above 1GB in size, please reduce this number."
+                create_table("SecRequestBodyNoFilesLimit", currentRequestConfig.get('SecRequestBodyNoFilesLimit'), recommendedRequestConfig.get('SecRequestBodyNoFilesLimit'), explanation, pdf)
+        if currentRequestConfig.get("SecRequestBodyLimitAction") != recommendedRequestConfig.get("SecRequestBodyLimitAction"):
+            explanation = "Setting this option to ProcessPartial may cause a possible evasion issue since only the first part of the request that can fit inside the limit to be inspected."
+            create_table(currentRequestConfig.get('SecRequestBodyLimitAction'), recommendedRequestConfig.get('SecRequestBodyLimitAction'), explanation, pdf)
+        if currentRequestConfig.get("SecRequestBodyLimitAction", "SecPcreMatchLimit") != recommendedRequestConfig.get("SecPcreMatchLimit"):
+            if int(currentRequestConfig.get("SecPcreMatchLimit")) < 10000000:
+                explanation = "While ModSecurity sets the default PCRE limit at " + recommendedRequestConfig.get("SecPcreMatchLimit") + " to limit the chance of a regex DoS attack, it comes at a cost of getting the 'Rule execution error - PCRE limits exceeded (-8)' error, which causes a 403 error when accessing the page. Therefore, it is recommended to increase this value to 500000, as per https://github.com/SpiderLabs/owasp-modsecurity-crs/issues/656"
+                create_table("SecPcreMatchLimit", currentRequestConfig.get('SecPcreMatchLimit'),
+                     recommendedRequestConfig.get('SecPcreMatchLimit'), explanation, pdf)
+
+        if currentRequestConfig.get("SecPcreMatchLimitRecursion") != recommendedRequestConfig.get("SecPcreMatchLimitRecursion"):
+                if int(currentRequestConfig.get("SecPcreMatchLimitRecursion")) < 10000000:
+                    explanation = "While ModSecurity sets the default PCRE limit at " + recommendedRequestConfig.get("SecPcreMatchLimitRecursion") + " to limit the chance of a regex DoS attack, it comes at a cost of getting the 'Rule execution error - PCRE limits exceeded (-8)' error, which causes a 403 error when accessing the page. Therefore, it is recommended to increase this value to 500000, as per https://github.com/SpiderLabs/owasp-modsecurity-crs/issues/656"
+                    create_table("SecPcreMatchLimitRecursion", currentRequestConfig.get('SecPcreMatchLimitRecursion'),
+                         recommendedRequestConfig.get('SecPcreMatchLimitRecursion'), explanation, pdf)
+    else:
+        explanation = "ModSecurity is not able to read request bodies, it is recommended to set this to 'On'."
+        create_table("SecRequestBodyAccess", currentRequestConfig.get('SecRequestBodyAccess'),
+                     recommendedRequestConfig.get('SecRequestBodyAccess'), explanation, pdf)
+
+    return pdf
+
+def checkResponseBodyConfig(currentResponseConfig, recommendedResponseConfig, pdf):
+    if currentResponseConfig.get('SecResponseBodyAccess') == recommendedResponseConfig.get('SecResponseBodyAccess'):
+        # print("WARNING: Enabling this would increase latency and memory consumption.")
+        if currentResponseConfig.get("SecResponseBodyMimeType") != recommendedResponseConfig.get("SecResponseBodyMimeType"):
+            explanation = "The current configuration does not support all recommended MIME types for response body buffering, but if your application does not use the types, then there is no need for action."
+            create_table("SecResponseBodyMimeType", currentResponseConfig.get("SecResponseBodyMimeType"), recommendedResponseConfig.get("SecResponseBodyMimeType"), explanation, pdf)
+        if currentResponseConfig.get('SecResponseBodyLimit') != recommendedResponseConfig.get('SecResponseBodyLimit'):
+            if int(currentResponseConfig.get('SecResponseBodyLimit')) > 1073741824:
+                explanation = "ModSecurity will automatically drop any files above 1GB in size, please reduce this number."
+                create_table("SecResponseBodyLimit", currentResponseConfig.get("SecResponseBodyLimit"),
+                             recommendedResponseConfig.get("SecResponseBodyLimit"), explanation, pdf)
+        if currentResponseConfig.get('SecResponseBodyLimitAction') != recommendedResponseConfig.get('SecResponseBodyLimitAction'):
+            explanation = "Recommended to be changed to ProcessPartial in case your website has a long response body. It would be less secure, but only in the case where the attack controls the output of the body."
+            create_table("SecResponseBodyLimitAction", currentResponseConfig.get("SecResponseBodyLimitAction"),
+                         recommendedResponseConfig.get("SecResponseBodyLimitAction"), explanation, pdf)
+    else:
+        explanation = "It is recommended to enable this to identify errors and data leakage issues."
+        create_table("SecResponseBodyAccess", currentResponseConfig.get("SecResponseBodyAccess"),
+                     recommendedResponseConfig.get("SecResponseBodyAccess"), explanation, pdf)
+    return pdf
+
+def checkUploadConfig(currentUploadConfig, pdf):
+    # since the recommended config does not enable this, we will check against the system config
+    secUploadDir = currentUploadConfig.get("SecUploadDir")
+    if secUploadDir:
+        if (os.access(secUploadDir, os.F_OK) == False):
+            explanation = "Directory does not exist, it is recommended to create a directory with read and write access to the user ONLY, or this user is not able to view the directory."
+            create_table("SecUploadDir", currentUploadConfig.get("SecUploadDir"),
+                         "-", explanation, pdf)
+        if (oct(os.stat(secUploadDir).st_mode)[5:6] != "6"):
+            explanation = "Directory does not have the appropriate permissions, please check if the directory has READ and WRITE permissions."
+            create_table("SecUploadDir", currentUploadConfig.get("SecUploadDir"),
+                         "-", explanation, pdf)
+        if (oct(os.stat(secUploadDir).st_mode)[6:8] != "00"):
+            explanation = "Directory has permissions that allow others besides the user to access the directory. It is recommended to allow read and write access to the user only."
+            create_table("SecUploadDir", currentUploadConfig.get("SecUploadDir"),
+                         "-", explanation, pdf)
+        if currentUploadConfig.get("SecUploadKeepFiles") != "RelevantOnly":
+            explanation = "It is recommended for files relevant to the request to be kept to save space."
+            create_table("SecUploadKeepFiles", currentUploadConfig.get("SecUploadKeepFiles"),
+                         "RelevantOnly", explanation, pdf)
+        if currentUploadConfig.get("SecUploadFileMode") != "0600":
+            explanation = "It is recommended for the files saved to only have read and write permissions for the owner only."
+            create_table("SecUploadFileMode", currentUploadConfig.get("SecUploadFileMode"),
+                         "0600", explanation, pdf)
+    else:
+        explanation = "Recommended to enable this unless your web application does not allow file uploads at all."
+        create_table("SecUploadDir", "Disabled",
+                     "-", explanation, pdf)
+
+    return pdf
+
+def checkDebugConfig(currentDebugConfig, pdf):
+    secDebugLog = currentDebugConfig.get("SecDebugLog")
+    if secDebugLog:
+        if (os.access(secDebugLog, os.F_OK) == False):
+            explanation = secDebugLog + " does not exist, it is recommended to create a file with read and write access to the user ONLY, or this user is not able to view the directory."
+            create_table("SecDebugLog", secDebugLog,
+                         "-", explanation, pdf)
+        if (oct(os.stat(secDebugLog).st_mode)[5:6] != "6"):
+            explanation = secDebugLog + " does not have the appropriate permissions, please check if the file has READ and WRITE permissions."
+            create_table("SecDebugLog", secDebugLog,
+                         "-", explanation, pdf)
+        if (oct(os.stat(secDebugLog).st_mode)[6:8] != "00"):
+            explanation = secDebugLog + " has permissions that allow others besides the user to access the file. It is recommended to allow read and write access to the user only."
+            create_table("SecDebugLog", secDebugLog,
+                         "-", explanation, pdf)
+        if currentDebugConfig.get("SecDebugLogLevel") > 3:
+            explanation = "In a production environment, it is recommended to 3 if you really need logging, but 0 is optimal performance-wise."
+            create_table("SecUploadFileMode", currentDebugConfig.get("SecDebugLogLevel"),
+                         "3 or lesser", explanation, pdf)
+    else:
+        explanation = "When testing, debug should be enabled to facilitate troubleshooting process. In production, debug should be disabled, or set to 3 at maximum."
+        create_table("SecDebugLog", "Disabled",
+                     "-", explanation, pdf)
+
+    return pdf
+
+def checkAuditConfig(currentAuditConfig, recommendedAuditConfig, pdf):
+    if currentAuditConfig.get("SecAuditEngine") == recommendedAuditConfig.get("SecAuditEngine"):
+        if currentAuditConfig.get("SecAuditLogRelevantStatus") != recommendedAuditConfig.get("SecAuditLogRelevantStatus"):
+            explanation = "It is recommended to follow the regex as specified, as it logs all 5xx and 4xx status codes, except for 404."
+            create_table("SecAuditLogRelevantStatus", currentAuditConfig.get("SecAuditLogRelevantStatus"),
+                         recommendedAuditConfig.get("SecAuditLogRelevantStatus"), explanation, pdf)
+
+        if sorted(currentAuditConfig.get("SecAuditLogParts")) != sorted(recommendedAuditConfig.get("SecAuditLogParts")):
+            if "A" and "Z" in currentAuditConfig.get("SecAuditLogParts"):
+                explanation = "Mandatory fields are present, but the config does not follow the recommended config."
+            else:
+                explanation = "Mandatory fields A and Z are missing."
+            create_table("SecAuditLogParts", currentAuditConfig.get("SecAuditLogParts"),
+                         recommendedAuditConfig.get("SecAuditLogParts"), explanation, pdf)
+        if currentAuditConfig.get("SecAuditLogType") == "Serial":
+            if currentAuditConfig.get("SecAuditLog"):
+                secAuditLog = currentAuditConfig.get("SecAuditLog")
+                if (os.access(secAuditLog, os.F_OK) == False):
+                    explanation = secAuditLog + " does not exist, it is recommended to create a file with read and write access to the user ONLY, or this user is not able to view the directory."
+                    create_table("SecAuditLog", currentAuditConfig.get("SecAuditLog"),
+                                 "-", explanation, pdf)
+                if (oct(os.stat(secAuditLog).st_mode)[5:6] != "6"):
+                    explanation = secAuditLog + " does not have the appropriate permissions, please check if the file has READ and WRITE permissions."
+                    create_table("SecAuditLog", oct(os.stat(secAuditLog).st_mode)[5:6],
+                                 "6", explanation, pdf)
+                if (oct(os.stat(secAuditLog).st_mode)[6:8] != "00"):
+                    explanation = secAuditLog + " has permissions that allow others besides the user to access the file. It is recommended to allow read and write access to the user only."
+                    create_table("SecAuditLog", oct(os.stat(secAuditLog).st_mode)[6:8],
+                                 "00", explanation, pdf)
+            else:
+                explanation = "No audit log file specified."
+                create_table("SecAuditLog", currentAuditConfig.get("SecAuditLog"),
+                             recommendedAuditConfig.get("SecAuditLog"), explanation, pdf)
+        if currentAuditConfig.get("SecAuditLog") == "Concurrent":
+            if currentAuditConfig.get("SecAuditLogStorageDir"):
+                secAuditLogDir = currentAuditConfig.get("SecAuditLogStorageDir")
+                if (os.access(secAuditLogDir, os.F_OK) == False):
+                    explanation = "Directory does not exist, it is recommended to create a directory with read and write access to the user ONLY, or this user is not able to view the directory."
+                    create_table("SecAuditLogStorageDir", currentAuditConfig.get("SecAuditLogStorageDir"),
+                                 "-", explanation, pdf)
+                if (oct(os.stat(secAuditLogDir).st_mode)[5:6] != "6"):
+                    explanation = "Directory does not have the appropriate permissions, please check if the directory has READ and WRITE permissions."
+                    create_table("secAuditLogDir", oct(os.stat(secAuditLogDir).st_mode)[5:6],
+                                 "6", explanation, pdf)
+                if (oct(os.stat(secAuditLogDir).st_mode)[6:8] != "00"):
+                    explanation = "Directory has permissions that allow others besides the user to access the directory. It is recommended to allow read and write access to the user only."
+                    create_table("secAuditLogDir", oct(os.stat(secAuditLogDir).st_mode)[6:8],
+                                 "00", explanation, pdf)
+        if currentAuditConfig.get("SecAuditLogType") != "Concurrent" or "Serial":
+            explanation = "Unsupported audit log type"
+            create_table("SecAuditLogType", currentAuditConfig.get("SecAuditLogType"),
+                         "Serial or Concurrent", explanation, pdf)
+
+    else:
+        explanation = "It is recommended to set this to RelevantOnly, to log transactions that result in errors."
+        create_table("SecAuditEngine", currentAuditConfig.get("SecAuditEngine"),
+                     recommendedAuditConfig.get("SecAuditEngine"), explanation, pdf)
+    return pdf
+
+def checkFilesystemConfig(currentFilesystemConfig, recommendedFilesystemConfig, pdf):
+
+    # This assumes that the user who runs this code is logged onto is root
+
+    currentSecTmpDir = currentFilesystemConfig.get('SecTmpDir')
+    recommendedSecTmpDir = recommendedFilesystemConfig.get('SecTmpDir')
+
+    currentSecDataDir = currentFilesystemConfig.get('SecDataDir')
+    recommendedSecDataDir = recommendedFilesystemConfig.get('SecDataDir')
+    if currentSecTmpDir == recommendedSecTmpDir:
+        explanation = "Although the default directory to store temporary files is /tmp, it is recommended to change to specify a location that's private."
+        create_table("SecTmpDir", currentSecTmpDir,
+                     recommendedSecTmpDir, explanation, pdf)
+    else:
+        if (os.access(currentSecTmpDir, os.F_OK) == False):
+            explanation = currentSecTmpDir + " does not exist, it is recommended to create a directory with read and write access to the user ONLY, or this user is not able to view the directory."
+            create_table("SecTmpDir", currentSecTmpDir,
+                         recommendedSecTmpDir, explanation, pdf)
+        if (oct(os.stat(currentSecTmpDir).st_mode)[5:6] != "6"):
+            explanation = currentSecTmpDir + " does not have the appropriate permissions, please check if the directory has READ and WRITE permissions."
+            create_table("SecTmpDir", oct(os.stat(currentSecTmpDir).st_mode)[5:6],
+                         "6", explanation, pdf)
+        if (oct(os.stat(currentSecTmpDir).st_mode)[6:8] != "00"):
+            explanation = currentSecTmpDir + " has permissions that allow others besides the user to access the directory. It is recommended to allow read and write access to the user only."
+            create_table("SecTmpDir", oct(os.stat(currentSecTmpDir).st_mode)[6:8],
+                         "00", explanation, pdf)
+
+    if currentSecDataDir == recommendedSecDataDir:
+        explanation = "Although the default directory to store persistent data is /tmp, it is recommended to change to specify a location that's private."
+        create_table("SecTmpDir", currentSecDataDir,
+                     recommendedSecDataDir, explanation, pdf)
+    else:
+        if (os.access(currentSecTmpDir, os.F_OK) == False):
+            explanation = currentSecDataDir + " does not exist, it is recommended to create a directory with read and write access to the user ONLY, or this user is not able to view the directory."
+            create_table("SecTmpDir", currentSecDataDir,
+                         currentSecDataDir, explanation, pdf)
+        if (oct(os.stat(currentSecTmpDir).st_mode)[5:6] != "6"):
+            explanation = currentSecDataDir + " does not have the appropriate permissions, please check if the directory has READ and WRITE permissions."
+            create_table("SecDataDir", oct(os.stat(currentSecTmpDir).st_mode)[5:6],
+                         "6", explanation, pdf)
+        if (oct(os.stat(currentSecTmpDir).st_mode)[6:8] != "00"):
+            explanation = currentSecDataDir + " has permissions that allow others besides the user to access the directory. It is recommended to allow read and write access to the user only."
+            create_table("SecDataDir", oct(os.stat(currentSecTmpDir).st_mode)[6:8],
+                         "00", explanation, pdf)
+
+    return pdf
+
+def checkMiscConfig(currentMiscConfig, recommendedMiscConfig, pdf):
+    if currentMiscConfig.get("SecArgumentSeparator") != recommendedMiscConfig.get("SecArgumentSeparator"):
+        explanation = "Unless the web application is using a non-standard separator, it should be set as '&'."
+        create_table("SecArgumentSeparator", currentMiscConfig.get("SecArgumentSeparator"),
+                     recommendedMiscConfig.get("SecArgumentSeparator"), explanation, pdf)
+    if currentMiscConfig.get("SecCookieFormat") != recommendedMiscConfig.get("SecCookieFormat"):
+        explanation = "Unless the web application is using version 1 Cookies, it should be set as 0 (netscape cookies)."
+        create_table("SecCookieFormat", currentMiscConfig.get("SecCookieFormat"),
+                     recommendedMiscConfig.get("SecCookieFormat"), explanation, pdf)
+    if currentMiscConfig.get("SecUnicodeMapFile") != recommendedMiscConfig.get("SecUnicodeMapFile"):
+        explanation = "Better to follow the recommended config, unless you have a different unicode file to use."
+        create_table("SecUnicodeMapFile", currentMiscConfig.get("SecUnicodeMapFile"),
+                     recommendedMiscConfig.get("SecUnicodeMapFile"), explanation, pdf)
+    if currentMiscConfig.get("SecStatusEngine") != recommendedMiscConfig.get("SecStatusEngine"):
+        explanation = "Recommended to set to Off; as of 2022, there is no receiver for this information."
+        create_table("SecStatusEngine", currentMiscConfig.get("SecStatusEngine"),
+                     recommendedMiscConfig.get("SecStatusEngine"), explanation, pdf)
+
+    return pdf
+
 
 def create_arrray(w, x, y, z=None):
     array = []
@@ -239,7 +582,7 @@ rules_with_differences = []
 
 guideline = open_json("Guideline.json")
 #waf = open_json("waf.json")
-waf = open_json("Guideline_copy.json")
+waf = open_json("waf.json")
 
 #Number of rules in the guideline
 size1 = len(guideline)
@@ -263,7 +606,7 @@ pie_chart(count, size2, "Not in CRS", "In CRS", "Rules deployed on WAF")
 #Compare the version of each rule found in the Guideline with those found in the WAF
 version = get_latest_tag(guidelineURL)
 version = version[1:-4].strip()
-print(version)
+print("Audit in progress...Please do not close this terminal")
 is_latest_version = None
 rules1 = []
 for i in range(size1):
@@ -285,38 +628,9 @@ for i in range(size1):
                     rules_with_differences.append(waf[index].get("id"))
         except:
             pass
-#Count the number of rules related to Top 5 web attacks
-#attacks = {"XSS": 0, "SQL": 0, "Path Traversal": 0, "File Inclusion": 0, "DDoS": 0, "Others": 0}
-#for rules in waf:
-#    if "xss" in str(rules.values()).lower():
-#        attacks["XSS"] += 1
-#    elif "sql" in str(rules.values()).lower():
-#        attacks["SQL"] += 1
-#    elif "path traversal" in str(rules.values()).lower():
-#        attacks["Path Traversal"] += 1
-#    elif "file inclusion" in str(rules.values()).lower():
-#        attacks["File Inclusion"] += 1
-#    elif "dos" in str(rules.values()).lower():
-#        attacks["DDoS"] += 1
-#    else:
-#        attacks["Others"] += 1
 
-#plt.clf()
-#proportions = np.array(list(attacks.values()))
-#labels = np.array(list(attacks.keys()))
-#colors = ['red','orange','yellow','green','blue','violet']
-#3plt.bar(labels, proportions, color=colors)
-# Set the tick positions and labels
-#plt.xticks(np.arange(len(labels)), labels)
-# Adjust the spacing of the labels
-#plt.gcf().autofmt_xdate(rotation=45)
-#plt.savefig("Bargraph1.png")
-#total_score = calculate_score(guideline)af_score = calculate_score(waf)
-#
 total_score = calculate_weighted_scores("Guideline.json")
-waf_score = calculate_weighted_scores("Guideline_copy.json")
-#print(total_score)
-#print(waf_score)
+waf_score = calculate_weighted_scores("waf.json")
 result = parse_rule_violations("/var/log/apache2/modsec_audit.log")
 
 severitys = []
@@ -384,13 +698,12 @@ for i in range(size1):
         if guideline_key != waf_key or guideline_value != waf_value:
             header = guideline_key + guideline_value
             header1 = waf_key + waf_value
-            if is_request_header_same == None:
-                explanation = explain_regex(header, guideline[i].get("id"), "guideline")
-                explanation1 = explain_regex(header1, waf[index].get("id"), "waf")
+            explanation = explain_regex(header, guideline[i].get("id"), "guideline")
+            explanation1 = explain_regex(header1, waf[index].get("id"), "waf")
             is_request_header_same = False
             request_header = create_arrray(guideline[i].get("id"), header, header1, guideline[i].get("msg"))
-            request_header.append(explanation)
-            request_header.append(explanation1)
+            request_header.append(explanation.replace("\n\n", " "))
+            request_header.append(explanation1.replace("\n\n", " "))
             request_headers.append(request_header)
             rules_with_differences.append(waf[index].get("id"))
 
@@ -444,6 +757,22 @@ def table_variable(row_heading, data):
     pdf.set_font('Arial', '', 12)
     pdf.multi_cell(col_width, row_height, data, border=1, align='')
 
+def create_table(config, currentConfig, recommendedConfig, explanation, pdf):
+    # used for comparing config
+    pdf.set_font("Arial", "B", size=12)
+
+    col_width = pdf.w / 1.1
+    row_height = pdf.font_size * 2
+
+    config = "Configuration: " + config
+
+    pdf.cell(col_width, row_height, config, border=1, align='C')
+    pdf.ln()
+    table_variable("Current", currentConfig)
+    table_variable("Recommended", recommendedConfig)
+    table_variable("Explanation", explanation)
+    return pdf
+
 pdf = FPDF()
 pdf.add_page()
 pdf.set_font('Arial', 'B', 30)
@@ -493,6 +822,7 @@ if is_request_header_same is False:
         pdf.ln()
 else:
     section_text('All rules have the same header')
+    section_text("Your WAF has the recommended rule variables set as per the guideline. Your WAF is more likely to identify and respond to specific conditions that may indicate an attack. Your WAF is better equipped to handle a wide range of security threats, with a reduced risk of false positives or false negatives.")
 
 section_header("Version")
 if is_latest_version is False:
@@ -501,7 +831,8 @@ if is_latest_version is False:
     table_3_by_3("Rule ID", "Current Version", "Latest Version", rules1)
 else:
     section_text('As of ' + str(datetime.now()) + ', the latest version of ModSecurity Core Rule Set (CRS) is: ' + version + '. All rules are currently using the latest version.')
-    
+    section_text("Your WAF is the same version as the guideline. It means that the WAF is properly configured and aligned with the best practices recommended by the OWASP CRS guideline. Keeping the version of the WAF rule set up to date with the recommended guideline is important because it helps ensure that the WAF is always up-to-date with the latest security threats and that the configuration remains aligned with best practices.")
+
 pdf.add_page()
 section_header("Severity")
 if is_severity_same is False:
@@ -513,6 +844,7 @@ if is_severity_same is False:
     table_3_by_3("Rule ID", "Configured Severity", "Recommended Severity", severitys)
 else:
     section_text('All rules are currently using the latest version')
+    section_text("Your WAF has followed the guideline perfectly for the Severity of each rule. By following the severity guidelines in a WAF, the WAF can distinguish between more severe and less severe anomalies and assign scores accordingly. This can help prioritise which events require immediate attention and which ones can be investigated later. Maintaining this standard is also important because as new threats emerge, the severity of rules may need to be adjusted accordingly. It is essential to periodically review and update the severity levels to ensure that the WAF is providing the appropriate level of protection.")
 pdf.add_page()
 section_header("Action")
 if is_action_same is False:
@@ -524,6 +856,7 @@ if is_action_same is False:
     table_3_by_3("Rule ID", "Configured Action", "Recommended Action", actions)
 else:
     section_text('All rules are currently using the latest version')
+    section_text("Your WAF has followed the guideline perfectly for the Action of each rule. The WAF is providing the desired level of protection while minimising the impact on legitimate traffic by having the recommended action for its SecRules. It is important to regularly review and maintain this standard for continued protection.")
 
 pdf.add_page()
 section_header("Scoring")
@@ -551,5 +884,91 @@ section_text('These are the violations found, shown with the rules triggered and
 for i in range(len(ruleList)):
     pdf.multi_cell(col_width, row_height, str(ruleList[i]), border=1, align='')
     pdf.ln()
+
+# pull from git
+url = "https://raw.githubusercontent.com/SpiderLabs/ModSecurity/v3/master/modsecurity.conf-recommended"
+recommendedFile = "recommended-config.txt"
+response = requests.get(url)
+with open(recommendedFile, "wb") as f:
+    f.write(response.content)
+
+configFile = '/etc/modsecurity/modsecurity.conf'
+
+pdf.add_page()
+section_header("Overview of ModSecurity Configuration")
+section_text("This part describes the current configurations against the recommended configurations for ModSecurity.")
+pdf.ln()
+section_text("Although ModSecurity's recommended configuration does not account for the exact use cases for every implementation, it serves as a recommendation for administrators to follow. "
+             "Some configurations have been referenced from other sources due to the limitations of the recommended configuration.")
+section_text("This section of the report will only display the non-compliant configurations against the recommended configurations as stated by ModSecurity.")
+pdf.ln()
+
+
+# initializing all parts of the config file
+modSecurityEnabled = readConfigFile(configFile, enableModSecurityDict())
+
+currentRequestConfig = readConfigFile(configFile, requestBodyDict())
+recommendedRequestConfig = readConfigFile(recommendedFile, requestBodyDict())
+
+currentResponseConfig = readConfigFile(configFile, responseBodyDict())
+recommendedResponseConfig = readConfigFile(recommendedFile, responseBodyDict())
+
+currentUploadConfig = readConfigFile(configFile, uploadDict())
+recommendedUploadConfig = readConfigFile(recommendedFile, uploadDict())
+
+currentDebugConfig = readConfigFile(configFile, debugLogDict())
+recommendedDebugConfig = readConfigFile(recommendedFile, debugLogDict())
+
+currentAuditConfig = readConfigFile(configFile, auditLogDict())
+recommendedAuditConfig = readConfigFile(recommendedFile, auditLogDict())
+
+currentFilesystemConfig = readConfigFile(configFile, filesystemConfigDict())
+recommendedFilesystemConfig = readConfigFile(recommendedFile, filesystemConfigDict())
+
+currentMiscConfig = readConfigFile(configFile, miscConfigDict())
+recommendedMiscConfig = readConfigFile(recommendedFile, miscConfigDict())
+
+pdf = checkModSecurityEnabled(modSecurityEnabled, pdf)
+pdf.ln()
+
+# finding the difference between the 2 dicts
+# value = {k: currentConfig[k] for k, _ in set(currentConfig.items()) - set(recommendedConfig.items())}
+# print(value)
+if {k: currentRequestConfig[k] for k, _ in set(currentRequestConfig.items()) - set(recommendedRequestConfig.items())}:
+    section_header("Request Configurations")
+    pdf = checkRequestBodyConfig(currentRequestConfig, recommendedRequestConfig, pdf)
+    pdf.ln()
+
+if {k: currentResponseConfig[k] for k, _ in set(currentResponseConfig.items()) - set(recommendedResponseConfig.items())}:
+    section_header("Response Configurations")
+    pdf = checkResponseBodyConfig(currentResponseConfig, recommendedResponseConfig, pdf)
+    pdf.ln()
+
+if {k: currentFilesystemConfig[k] for k, _ in set(currentFilesystemConfig.items()) - set(recommendedFilesystemConfig.items())}:
+    section_header("Filesystem Configurations")
+    pdf = checkFilesystemConfig(currentFilesystemConfig, recommendedFilesystemConfig, pdf)
+    pdf.ln()
+
+section_header("Upload Configurations")
+pdf = checkUploadConfig(currentUploadConfig, pdf)
+pdf.ln()
+
+section_header("Debug Configurations")
+pdf = checkDebugConfig(currentDebugConfig, pdf)
+pdf.ln()
+
+if {k: currentAuditConfig[k] for k, _ in set(currentAuditConfig.items()) - set(recommendedAuditConfig.items())}:
+    section_header("Audit Configurations")
+    pdf = checkAuditConfig(currentAuditConfig, recommendedAuditConfig, pdf)
+    pdf.ln()
+
+if {k: currentMiscConfig[k] for k, _ in set(currentMiscConfig.items()) - set(recommendedMiscConfig.items())}:
+    section_header("Miscellaneous Configurations")
+    checkMiscConfig(currentMiscConfig, recommendedMiscConfig, pdf)
+    pdf.ln()
+
+os.remove(recommendedFile)
+
 #pdf.output(str(datetime.now()) + '.pdf', 'F')
 pdf.output('test.pdf', 'F')
+print("Your report has been generated")
