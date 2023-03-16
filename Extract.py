@@ -68,7 +68,7 @@ def compileGuideline():
     compiledGuideline.close()
 
 def compileWAF():
-    test = os.system("cat /usr/share/modsecurity-crs/rules/*.conf >> /home/egglet/waf.txt")
+    test = os.system("cat /usr/share/modsecurity-crs/rules/*.conf >> waf.txt")
     with open("waf.txt", "r") as input_file, open("output_file.txt", "w") as output_file:
         for line in input_file:
             if not line.startswith("#"):
