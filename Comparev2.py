@@ -794,7 +794,7 @@ pdf.image('pie_chart_2.png', 30, 30, w = 140, h = 120, type = '', link = '')
 pdf.add_page()
 section_header("WAF Breakdown")
 section_text("Of the " + str(size2) + " rules on the WAF, only " + str(count1) +  " of them are included in the ModSecurity Core Rule Set (CRS). The following pie chart shows the distribution of WAF rules that are included in the ModSecurity Core Rule Set (CRS) and custom rules, expressed as a percentage of the total number of WAF rules.")
-pdf.image('pie_chart_1.png', 30, 50, w = 140, h = 120, type = '', link = '')
+pdf.image('pie_chart_1.png', 30, 70, w = 140, h = 120, type = '', link = '')
 pdf.set_y(160)
 col_width = pdf.w / 1.1
 row_height = pdf.font_size * 2
